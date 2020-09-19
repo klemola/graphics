@@ -1,9 +1,10 @@
 module Main exposing (main)
 
-
+import Array
 import Browser
 import Camera3d
 import Color exposing (Color)
+import Direction3d
 import Html
 import Length
 import Pixels
@@ -12,60 +13,110 @@ import Scene3d
 import Scene3d.Material as Material
 import Scene3d.Mesh as Mesh
 import Task
+import TriangularMesh
 import Viewpoint3d
 import WebGL.Texture
-import Direction3d
-import Array
-import TriangularMesh
+
 
 tileSheetSizePx : Float
-tileSheetSizePx = 512.0
+tileSheetSizePx =
+    512.0
+
 
 tileSizePx : Float
-tileSizePx = 128.0
+tileSizePx =
+    128.0
+
+
+exampleMesh =
+    tileMeshByIndex 13
+
+
+
+{- Selects a tile based on 0-index location in a tilesheet.
+   Index 0 is a tile in the top left corner of the tilesheet.
+-}
+
+
+tileMeshByIndex : Int -> Mesh.Unlit coordinates
+tileMeshByIndex idx =
+    let
+        col =
+            if idx < 4 then
+                idx + 1
+
+            else
+                modBy 4 (idx + 1)
+
+        row =
+            (idx // 4)
+                |> toFloat
+                |> floor
+                |> (+) 1
+    in
+    ( col, row )
+        |> tilePositionToUVs
+        |> tileMesh
+
+
+
+{- Maps coordinates (columns/rows) in a tile sheet to a square tile of x width/height, given
+   a tilesheet of y width/height.
+-}
+
 
 type alias UVs =
-    { bottomLeft: (Float, Float)
-    , bottomRight: (Float, Float)
-    , topLeft: (Float, Float)
-    , topRight: (Float, Float)
+    { bottomLeft : ( Float, Float )
+    , bottomRight : ( Float, Float )
+    , topLeft : ( Float, Float )
+    , topRight : ( Float, Float )
     }
 
-tilePositionToUVs : (Float, Float) -> UVs
-tilePositionToUVs (x, y) =
+
+tilePositionToUVs : ( Int, Int ) -> UVs
+tilePositionToUVs ( col, row ) =
     let
-        (dx, dy) = (x * tileSizePx, y * tileSizePx)
+        ( colInScale, rowInScale ) =
+            ( toFloat col * tileSizePx, toFloat row * tileSizePx )
+
+        -- cols are positive numbers, while position starts from 0
+        -- shift col "one to the left"
+        originX =
+            colInScale - tileSizePx
+
+        -- UVs work y values that increase from bottom to top, while rows work in the opposite direction
+        -- shift row by the size of the tilesheet
+        originY =
+            abs (rowInScale - tileSheetSizePx)
     in
-
-    { bottomLeft = (dx  / tileSheetSizePx , dy  / tileSheetSizePx)
-    , bottomRight = (dx / tileSheetSizePx , (dy + tileSizePx) / tileSheetSizePx)
-    , topLeft = ((dx + tileSizePx) / tileSheetSizePx , dy / tileSheetSizePx)
-    , topRight = ((dx + tileSizePx) / tileSheetSizePx, (dy + tileSizePx) / tileSheetSizePx )
+    { bottomLeft = ( originX / tileSheetSizePx, originY / tileSheetSizePx )
+    , bottomRight = ( originX / tileSheetSizePx, (originY + tileSizePx) / tileSheetSizePx )
+    , topLeft = ( (originX + tileSizePx) / tileSheetSizePx, originY / tileSheetSizePx )
+    , topRight = ( (originX + tileSizePx) / tileSheetSizePx, (originY + tileSizePx) / tileSheetSizePx )
     }
 
 
 
-tileMesh : (Float, Float) -> Mesh.Unlit coordinates
-tileMesh tileSheetPosition =
-    let
-        uvs =
-            tilePositionToUVs tileSheetPosition
+{- Builds a quad covered with a subtexture, by UV coordinates. -}
 
+
+tileMesh : UVs -> Mesh.Unlit coordinates
+tileMesh uvs =
+    let
         vertices =
             Array.fromList
-                [ { position = Point3d.meters 0 1 0, uv = uvs.bottomLeft  }
-                , { position = Point3d.meters 1 1 0, uv = uvs.bottomRight  }
-                , { position = Point3d.meters 0 0 0, uv = uvs.topLeft  }
-                , { position = Point3d.meters 1 0 0, uv = uvs.topRight  }
+                [ { position = Point3d.meters 0 1 0, uv = uvs.bottomLeft }
+                , { position = Point3d.meters 1 1 0, uv = uvs.bottomRight }
+                , { position = Point3d.meters 0 0 0, uv = uvs.topLeft }
+                , { position = Point3d.meters 1 0 0, uv = uvs.topRight }
                 ]
+
         faces =
             [ ( 0, 1, 3 ), ( 0, 3, 2 ) ]
     in
-        TriangularMesh.indexed vertices faces
+    TriangularMesh.indexed vertices faces
         |> Mesh.texturedTriangles
 
-
-exampleMesh = tileMesh (2, 4)
 
 type Model
     = Loading -- Waiting for texture to load
@@ -126,7 +177,8 @@ view model =
 
             Loaded texture ->
                 let
-                    tileSheet = Material.texturedColor texture
+                    tileSheet =
+                        Material.texturedColor texture
                 in
                 -- Texture loaded successfully, render a scene using it
                 [ Scene3d.unlit
