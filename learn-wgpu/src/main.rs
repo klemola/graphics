@@ -174,7 +174,7 @@ impl CameraController {
     }
 }
 
-const NUM_INSTANCES_PER_ROW: u32 = 10;
+const NUM_INSTANCES_PER_ROW: u32 = 16;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -406,6 +406,26 @@ impl State {
                         },
                         count: None,
                     },
+                    // normal map
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler {
+                            comparison: false,
+                            filtering: true,
+                        },
+                        count: None,
+                    },
                 ],
                 label: Some("texture_bind_group_layout"),
             });
@@ -491,7 +511,7 @@ impl State {
         .unwrap();
 
         let light = Light {
-            position: [5.0, 2.5, 0.0],
+            position: [5.0, 3.0, 0.0],
             _padding: 0,
             color: [1.0, 0.1, 0.1],
         };
