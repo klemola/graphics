@@ -7,6 +7,7 @@ use wgpu::util::DeviceExt;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
+    window::Fullscreen,
     window::Window,
     window::WindowBuilder,
 };
@@ -40,9 +41,15 @@ impl Uniforms {
 
 const NUM_INSTANCES_PER_ROW: u32 = 16;
 
+const CLEAR_COLOR: wgpu::Color = wgpu::Color {
+    r: 0.0,
+    g: 0.0,
+    b: 0.0,
+    a: 1.0,
+};
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-#[allow(dead_code)]
 struct InstanceRaw {
     model: [[f32; 4]; 4],
     normal: [[f32; 3]; 3],
@@ -60,8 +67,6 @@ impl model::Vertex for InstanceRaw {
             attributes: &[
                 wgpu::VertexAttribute {
                     offset: 0,
-                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials we'll
-                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5 not conflict with them later
                     shader_location: 5,
                     format: wgpu::VertexFormat::Float32x4,
                 },
@@ -206,12 +211,10 @@ struct State {
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
     light_render_pipeline: wgpu::RenderPipeline,
-    clear_color: wgpu::Color,
     mouse_pressed: bool,
 }
 
 impl State {
-    // Creating some of the wgpu types requires async code
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
 
@@ -380,7 +383,7 @@ impl State {
         let light = Light {
             position: [5.0, 3.0, 0.0],
             _padding: 0,
-            color: [1.0, 0.1, 0.1],
+            color: [1.0, 0.8, 0.7],
         };
 
         let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -464,13 +467,6 @@ impl State {
             )
         };
 
-        let clear_color = wgpu::Color {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        };
-
         Self {
             surface,
             device,
@@ -493,7 +489,6 @@ impl State {
             light_buffer,
             light_bind_group,
             light_render_pipeline,
-            clear_color,
             mouse_pressed: false,
         }
     }
@@ -594,7 +589,7 @@ impl State {
                 view: &frame.view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(self.clear_color),
+                    load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                     store: true,
                 },
             }],
@@ -637,7 +632,14 @@ impl State {
 fn main() {
     env_logger::init();
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+
+    // TODO: chain Option values all the way to Option<Fullscren>
+    let monitor = event_loop.available_monitors().next().unwrap();
+    let video_mode = monitor.video_modes().next().unwrap();
+    let window = WindowBuilder::new()
+        .with_fullscreen(Some(Fullscreen::Exclusive(video_mode)))
+        .build(&event_loop)
+        .unwrap();
 
     // Since main can't be async, we're going to need to block
     let mut state = pollster::block_on(State::new(&window));
@@ -647,18 +649,14 @@ fn main() {
         *control_flow = ControlFlow::Poll;
 
         match event {
-            Event::DeviceEvent {
-                ref event,
-                .. // We're not using device_id currently
-            } => {
+            Event::DeviceEvent { ref event, .. } => {
                 state.input(event);
-            },
+            }
 
             Event::WindowEvent {
                 ref event,
                 window_id,
             } if window_id == window.id() => {
-
                 match event {
                     WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
 

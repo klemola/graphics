@@ -98,10 +98,12 @@ fn main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     let object_color: vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords);
     let object_normal: vec4<f32> = textureSample(t_normal, s_normal, in.tex_coords);
 
-    let ambient_strength = 0.01;
+    let ambient_strength = 0.05;
     let ambient_color = light.color * ambient_strength;
 
-    let tangent_normal = object_normal.xyz * 2.0 - 1.0;
+    // how much diffuse light does the object reflect, like a "matte -> metal spectrum"
+    let reflect_factor = 0.66;
+    let tangent_normal = (object_normal.xyz * 2.0 - 1.0) * reflect_factor;
     let light_dir = normalize(in.tangent_light_position - in.tangent_position);
     let view_dir = normalize(in.tangent_view_position - in.tangent_position);
     let half_dir = normalize(view_dir + light_dir);
