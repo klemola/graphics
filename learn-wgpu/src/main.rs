@@ -1,6 +1,8 @@
 mod camera;
+mod entity;
 mod model;
 mod state;
+mod steering;
 mod texture;
 
 use cgmath::prelude::*;
@@ -31,7 +33,16 @@ fn main() {
     state.add_cube(
         cgmath::Vector3 {
             x: 0.0,
-            y: 0.0,
+            y: 3.0,
+            z: 0.0,
+        },
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
+    );
+
+    state.add_cube(
+        cgmath::Vector3 {
+            x: 0.0,
+            y: -3.0,
             z: 0.0,
         },
         cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),

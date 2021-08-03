@@ -1,9 +1,11 @@
 use crate::camera;
+use crate::entity::{Cube, Light};
 use crate::model;
+use crate::steering::{self, Kinematic};
 use crate::texture;
 
 use cgmath::prelude::*;
-use cgmath::Quaternion;
+use cgmath::{Quaternion, Vector3};
 use model::{DrawLight, DrawModel, Vertex};
 use wgpu::util::DeviceExt;
 use winit::{event::*, window::Window};
@@ -42,16 +44,16 @@ impl Uniforms {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceRaw {
+struct CubeRaw {
     model: [[f32; 4]; 4],
     normal: [[f32; 3]; 3],
 }
 
-impl model::Vertex for InstanceRaw {
+impl model::Vertex for CubeRaw {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         use std::mem;
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
+            array_stride: mem::size_of::<CubeRaw>() as wgpu::BufferAddress,
             // We need to switch from using a step mode of Vertex to Instance
             // This means that our shaders will only change to use the next
             // instance when the shader starts processing a new instance
@@ -99,29 +101,30 @@ impl model::Vertex for InstanceRaw {
     }
 }
 
-struct Instance {
-    position: cgmath::Vector3<f32>,
-    rotation: cgmath::Quaternion<f32>,
-}
-
-impl Instance {
-    fn to_raw(&self) -> InstanceRaw {
-        let model =
-            cgmath::Matrix4::from_translation(self.position) * cgmath::Matrix4::from(self.rotation);
-        InstanceRaw {
-            model: model.into(),
-            normal: cgmath::Matrix3::from(self.rotation).into(),
-        }
+fn cube_to_raw(cube: &Cube) -> CubeRaw {
+    let model =
+        cgmath::Matrix4::from_translation(cube.position) * cgmath::Matrix4::from(cube.orientation);
+    CubeRaw {
+        model: model.into(),
+        normal: cgmath::Matrix3::from(cube.orientation).into(),
     }
 }
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct Light {
-    position: [f32; 3],
+struct LightRaw {
+    pub position: [f32; 3],
     // Due to uniforms requring 16 byte (4 float) spacing, we need to use a padding field here
     _padding: u32,
-    color: [f32; 3],
+    pub color: [f32; 3],
+}
+
+fn light_to_raw(light: &Light) -> LightRaw {
+    LightRaw {
+        position: [light.position.x, light.position.y, light.position.z],
+        _padding: 0,
+        color: light.color,
+    }
 }
 
 pub struct State {
@@ -147,7 +150,7 @@ pub struct State {
     camera_controller: camera::CameraController,
     // module state
     uniforms: Uniforms,
-    instances: Vec<Instance>,
+    instances: Vec<Cube>,
     light: Light,
     mouse_pressed: bool,
 }
@@ -294,15 +297,11 @@ impl State {
         )
         .unwrap();
 
-        let light = Light {
-            position: [5.0, 3.0, 0.0],
-            _padding: 0,
-            color: [1.0, 0.8, 0.7],
-        };
+        let light = Light::new(Vector3::new(5.0, 0.0, 0.0), [1.0, 0.8, 0.7]);
 
         let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Light VB"),
-            contents: bytemuck::cast_slice(&[light]),
+            contents: bytemuck::cast_slice(&[light_to_raw(&light)]),
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
         });
 
@@ -355,7 +354,7 @@ impl State {
                 &render_pipeline_layout,
                 sc_desc.format,
                 Some(texture::Texture::DEPTH_FORMAT),
-                &[model::ModelVertex::desc(), InstanceRaw::desc()],
+                &[model::ModelVertex::desc(), CubeRaw::desc()],
                 shader,
             )
         };
@@ -446,25 +445,49 @@ impl State {
     }
 
     pub fn update(&mut self, dt: std::time::Duration) {
+        // the camera
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.uniforms
             .update_view_proj(&self.camera, &self.projection);
+
+        // the light
+        match self.instances.get(0) {
+            Some(cube) => {
+                let steering_output = steering::seek(&self.light, cube);
+                self.light.update(steering_output, dt);
+            }
+
+            None => {
+                let old_light_position: cgmath::Vector3<_> = self.light.position.into();
+
+                self.light.position = (cgmath::Quaternion::from_axis_angle(
+                    (0.0, 1.0, 0.0).into(),
+                    cgmath::Deg(60.0 * dt.as_secs_f32()),
+                ) * old_light_position)
+                    .into();
+            }
+        };
+
+        // the cubes
+        for cube in self.instances.iter_mut() {
+            let steering_output = steering::flee(cube, &self.light);
+            cube.update(steering_output, dt);
+        }
+
+        // update the raw render data
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
             bytemuck::cast_slice(&[self.uniforms]),
         );
 
-        let old_light_position: cgmath::Vector3<_> = self.light.position.into();
+        self.queue.write_buffer(
+            &self.light_buffer,
+            0,
+            bytemuck::cast_slice(&[light_to_raw(&self.light)]),
+        );
 
-        self.light.position = (cgmath::Quaternion::from_axis_angle(
-            (0.0, 1.0, 0.0).into(),
-            cgmath::Deg(60.0 * dt.as_secs_f32()),
-        ) * old_light_position)
-            .into();
-
-        self.queue
-            .write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light]));
+        self.update_cube_buffer();
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
@@ -521,16 +544,20 @@ impl State {
         Ok(())
     }
 
-    pub fn add_cube(&mut self, position: cgmath::Vector3<f32>, rotation: Quaternion<f32>) {
-        let instance = Instance { position, rotation };
+    pub fn add_cube(&mut self, position: cgmath::Vector3<f32>, orientation: Quaternion<f32>) {
+        let cube = Cube {
+            position,
+            orientation,
+            velocity: Vector3::zero(),
+            rotation: Vector3::zero(),
+        };
 
-        self.instances.push(instance);
+        self.instances.push(cube);
+        self.update_cube_buffer();
+    }
 
-        let instance_data = self
-            .instances
-            .iter()
-            .map(Instance::to_raw)
-            .collect::<Vec<_>>();
+    fn update_cube_buffer(&mut self) {
+        let instance_data = self.instances.iter().map(cube_to_raw).collect::<Vec<_>>();
 
         self.queue.write_buffer(
             &self.instance_buffer,
