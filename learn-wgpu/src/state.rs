@@ -1,14 +1,17 @@
-use crate::camera;
-use crate::entity::{Cube, Light};
-use crate::model;
-use crate::steering::{self, Kinematic};
-use crate::texture;
-
 use cgmath::prelude::*;
 use cgmath::{Quaternion, Vector3};
 use model::{DrawLight, DrawModel, Vertex};
+use rand::prelude::IteratorRandom;
+use rand::thread_rng;
+use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 use winit::{event::*, window::Window};
+
+use crate::camera;
+use crate::entity::{Cube, CubeState, Light};
+use crate::model;
+use crate::steering::{self, Kinematic};
+use crate::texture;
 
 const CLEAR_COLOR: wgpu::Color = wgpu::Color {
     r: 0.0,
@@ -16,6 +19,8 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
     b: 0.0,
     a: 1.0,
 };
+
+const CHASE_STOP_DISTANCE: f32 = 2.0;
 
 // We need this for Rust to store our data correctly for the shaders
 #[repr(C)]
@@ -142,15 +147,15 @@ pub struct State {
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
     light_render_pipeline: wgpu::RenderPipeline,
-    depth_texture: texture::Texture,
     // external state
     obj_model: model::Model,
+    depth_texture: texture::Texture,
     camera: camera::Camera,
     projection: camera::Projection,
     camera_controller: camera::CameraController,
     // module state
     uniforms: Uniforms,
-    instances: Vec<Cube>,
+    instances: HashMap<u16, Cube>,
     light: Light,
     mouse_pressed: bool,
 }
@@ -240,7 +245,7 @@ impl State {
                 label: Some("texture_bind_group_layout"),
             });
 
-        let instances = vec![];
+        let instances = HashMap::new();
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instance Buffer"),
             usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
@@ -249,7 +254,8 @@ impl State {
             mapped_at_creation: false,
         });
 
-        let camera = camera::Camera::new((0.0, 7.0, 21.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        let camera =
+            camera::Camera::new((-17.0, 8.0, 20.0), cgmath::Deg(-45.0), cgmath::Deg(-20.0));
         let projection =
             camera::Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
         let camera_controller = camera::CameraController::new(4.0, 0.4);
@@ -445,32 +451,61 @@ impl State {
     }
 
     pub fn update(&mut self, dt: std::time::Duration) {
+        let mut rng = thread_rng();
+
         // the camera
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.uniforms
             .update_view_proj(&self.camera, &self.projection);
 
         // the light
-        match self.instances.get(0) {
-            Some(cube) => {
-                let steering_output = steering::seek(&self.light, cube);
-                self.light.update(steering_output, dt);
-            }
+        match self.light.chase_target_id {
+            // chase the current target
+            Some(id) => match self.instances.get(&id) {
+                Some(cube) => {
+                    let steering_output = steering::seek(&self.light, cube);
+                    self.light.update(steering_output, dt);
 
-            None => {
-                let old_light_position: cgmath::Vector3<_> = self.light.position.into();
+                    let distance_to_cube = (self.light.position - cube.position).magnitude();
 
-                self.light.position = (cgmath::Quaternion::from_axis_angle(
-                    (0.0, 1.0, 0.0).into(),
-                    cgmath::Deg(60.0 * dt.as_secs_f32()),
-                ) * old_light_position)
-                    .into();
-            }
-        };
+                    if distance_to_cube < CHASE_STOP_DISTANCE {
+                        let prev_id = cube.id;
+                        let next_target_id = self
+                            .instances
+                            .keys()
+                            .filter(|k| **k != prev_id)
+                            .choose(&mut rng);
+
+                        self.light.chase_target_id = next_target_id.cloned();
+                    };
+                }
+
+                None => (),
+            },
+
+            // no active target, choose one
+            None => self.light.chase_target_id = self.instances.keys().next().cloned(),
+        }
 
         // the cubes
-        for cube in self.instances.iter_mut() {
-            let steering_output = steering::flee(cube, &self.light);
+        for cube in self.instances.values_mut() {
+            let distance_to_light = (cube.position - self.light.position).magnitude();
+            let next_state = if distance_to_light > CHASE_STOP_DISTANCE * 3.0 {
+                CubeState::Idle
+            } else {
+                CubeState::Fleeing
+            };
+
+            cube.state = next_state;
+
+            // choose steering behavior based on the cube state
+            let steering_output = match cube.state {
+                CubeState::Fleeing => steering::flee(cube, &self.light),
+
+                // no steering
+                _ => steering::stop(cube),
+            };
+
             cube.update(steering_output, dt);
         }
 
@@ -544,20 +579,20 @@ impl State {
         Ok(())
     }
 
-    pub fn add_cube(&mut self, position: cgmath::Vector3<f32>, orientation: Quaternion<f32>) {
-        let cube = Cube {
-            position,
-            orientation,
-            velocity: Vector3::zero(),
-            rotation: Vector3::zero(),
-        };
+    pub fn add_cube(
+        &mut self,
+        id: u16,
+        position: cgmath::Vector3<f32>,
+        orientation: Quaternion<f32>,
+    ) {
+        let cube = Cube::new(id, position, orientation);
 
-        self.instances.push(cube);
+        self.instances.insert(id, cube);
         self.update_cube_buffer();
     }
 
     fn update_cube_buffer(&mut self) {
-        let instance_data = self.instances.iter().map(cube_to_raw).collect::<Vec<_>>();
+        let instance_data = self.instances.values().map(cube_to_raw).collect::<Vec<_>>();
 
         self.queue.write_buffer(
             &self.instance_buffer,

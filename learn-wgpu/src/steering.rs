@@ -1,26 +1,12 @@
 use cgmath::{InnerSpace, Quaternion, Vector3, Zero};
 use std::time::Duration;
 
-const MAX_ACCELERATION_DEFAULT: f32 = 1.0;
-
 pub struct KinematicProps {
     pub position: Vector3<f32>,
     pub orientation: Quaternion<f32>,
     pub velocity: Vector3<f32>,
     pub rotation: Vector3<f32>,
     pub max_acceleration: f32,
-}
-
-impl KinematicProps {
-    pub fn new(position: Vector3<f32>, orientation: Quaternion<f32>) -> KinematicProps {
-        KinematicProps {
-            position,
-            orientation,
-            velocity: cgmath::Vector3::zero(),
-            rotation: cgmath::Vector3::zero(),
-            max_acceleration: MAX_ACCELERATION_DEFAULT,
-        }
-    }
 }
 
 pub trait Kinematic {
@@ -40,6 +26,16 @@ impl SteeringOutput {
             angular: Vector3::zero(),
         }
     }
+}
+
+pub fn stop(character_source: &impl Kinematic) -> SteeringOutput {
+    let mut result = SteeringOutput::new();
+    let character = character_source.props();
+
+    // Gradual slowdown
+    result.linear = -character.velocity;
+
+    result
 }
 
 pub fn seek(character_source: &impl Kinematic, target_souce: &impl Kinematic) -> SteeringOutput {

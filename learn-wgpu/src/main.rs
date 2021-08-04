@@ -31,6 +31,7 @@ fn main() {
     let mut last_render_time = std::time::Instant::now();
 
     state.add_cube(
+        1,
         cgmath::Vector3 {
             x: 0.0,
             y: 3.0,
@@ -40,9 +41,30 @@ fn main() {
     );
 
     state.add_cube(
+        2,
         cgmath::Vector3 {
             x: 0.0,
             y: -3.0,
+            z: 0.0,
+        },
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
+    );
+
+    state.add_cube(
+        3,
+        cgmath::Vector3 {
+            x: 3.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
+    );
+
+    state.add_cube(
+        4,
+        cgmath::Vector3 {
+            x: -3.0,
+            y: 0.0,
             z: 0.0,
         },
         cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),

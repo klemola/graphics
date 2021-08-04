@@ -6,6 +6,7 @@ pub struct Light {
     pub position: Vector3<f32>,
     pub velocity: Vector3<f32>,
     pub color: [f32; 3],
+    pub chase_target_id: Option<u16>,
 }
 
 impl Light {
@@ -14,18 +15,25 @@ impl Light {
             position,
             velocity: Vector3::zero(),
             color,
+            chase_target_id: None,
         }
     }
 }
 
 impl Kinematic for Light {
     fn props(&self) -> KinematicProps {
-        KinematicProps::new(self.position.into(), Quaternion::zero())
+        KinematicProps {
+            position: self.position.into(),
+            orientation: Quaternion::zero(),
+            velocity: cgmath::Vector3::zero(),
+            rotation: cgmath::Vector3::zero(),
+            max_acceleration: 1.5,
+        }
     }
 
     fn update(&mut self, steering: crate::steering::SteeringOutput, delta: std::time::Duration) {
         let dt = delta.as_secs_f32();
-        let max_speed = 0.8;
+        let max_speed = 0.95;
 
         // a Light can only move, not rotate
         self.position += self.velocity * dt;
@@ -38,11 +46,32 @@ impl Kinematic for Light {
     }
 }
 
+pub enum CubeState {
+    Fleeing,
+    Wandering,
+    Idle,
+}
+
 pub struct Cube {
+    pub id: u16,
     pub position: Vector3<f32>,
     pub orientation: Quaternion<f32>,
     pub velocity: Vector3<f32>,
     pub rotation: Vector3<f32>,
+    pub state: CubeState,
+}
+
+impl Cube {
+    pub fn new(id: u16, position: Vector3<f32>, orientation: Quaternion<f32>) -> Self {
+        Cube {
+            id,
+            position,
+            orientation,
+            velocity: Vector3::zero(),
+            rotation: Vector3::zero(),
+            state: CubeState::Idle,
+        }
+    }
 }
 
 impl Kinematic for Cube {
@@ -52,13 +81,13 @@ impl Kinematic for Cube {
             orientation: self.orientation,
             velocity: self.velocity,
             rotation: self.rotation,
-            max_acceleration: 0.5,
+            max_acceleration: 1.0,
         }
     }
 
     fn update(&mut self, steering: SteeringOutput, dt: std::time::Duration) {
         let dt = dt.as_secs_f32();
-        let max_speed = 0.6;
+        let max_speed = 0.5;
 
         self.position += self.velocity * dt;
 
