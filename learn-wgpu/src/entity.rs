@@ -18,6 +18,14 @@ impl Light {
             chase_target_id: None,
         }
     }
+
+    pub fn update_color(&mut self) {
+        self.color = [
+            distance_to_color_intensity(self.position.x),
+            distance_to_color_intensity(self.position.y),
+            distance_to_color_intensity(self.position.z),
+        ];
+    }
 }
 
 impl Kinematic for Light {
@@ -103,4 +111,11 @@ impl Kinematic for Cube {
             self.velocity *= max_speed;
         }
     }
+}
+
+fn distance_to_color_intensity(distance_from_origin: f32) -> f32 {
+    let max_intensity_distance = 5.0;
+    let ratio = distance_from_origin.abs() / max_intensity_distance;
+
+    ratio.clamp(0.0, 1.0)
 }

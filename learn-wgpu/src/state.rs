@@ -1,8 +1,7 @@
 use cgmath::prelude::*;
 use cgmath::{Quaternion, Vector3};
 use model::{DrawLight, DrawModel, Vertex};
-use rand::prelude::IteratorRandom;
-use rand::thread_rng;
+use rand::{prelude::IteratorRandom, thread_rng};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 use winit::{event::*, window::Window};
@@ -303,7 +302,7 @@ impl State {
         )
         .unwrap();
 
-        let light = Light::new(Vector3::new(5.0, 0.0, 0.0), [1.0, 0.8, 0.7]);
+        let light = Light::new(Vector3::new(0.0, 0.0, 0.0), [1.0, 0.8, 0.7]);
 
         let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Light VB"),
@@ -487,13 +486,15 @@ impl State {
             None => self.light.chase_target_id = self.instances.keys().next().cloned(),
         }
 
+        self.light.update_color();
+
         // the cubes
         for cube in self.instances.values_mut() {
             let distance_to_light = (cube.position - self.light.position).magnitude();
-            let next_state = if distance_to_light > CHASE_STOP_DISTANCE * 3.0 {
-                CubeState::Idle
-            } else {
+            let next_state = if distance_to_light < CHASE_STOP_DISTANCE * 3.0 {
                 CubeState::Fleeing
+            } else {
+                CubeState::Idle
             };
 
             cube.state = next_state;
@@ -502,7 +503,6 @@ impl State {
             let steering_output = match cube.state {
                 CubeState::Fleeing => steering::flee(cube, &self.light),
 
-                // no steering
                 _ => steering::stop(cube),
             };
 

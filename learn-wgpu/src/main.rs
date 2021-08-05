@@ -44,7 +44,7 @@ fn main() {
         2,
         cgmath::Vector3 {
             x: 0.0,
-            y: -3.0,
+            y: -4.0,
             z: 0.0,
         },
         cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
@@ -53,7 +53,7 @@ fn main() {
     state.add_cube(
         3,
         cgmath::Vector3 {
-            x: 3.0,
+            x: 5.0,
             y: 0.0,
             z: 0.0,
         },
@@ -63,9 +63,29 @@ fn main() {
     state.add_cube(
         4,
         cgmath::Vector3 {
-            x: -3.0,
+            x: -4.0,
             y: 0.0,
             z: 0.0,
+        },
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
+    );
+
+    state.add_cube(
+        5,
+        cgmath::Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 3.0,
+        },
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
+    );
+
+    state.add_cube(
+        6,
+        cgmath::Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: -5.0,
         },
         cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
     );
