@@ -33,7 +33,7 @@ impl Kinematic for Light {
         KinematicProps {
             position: self.position.into(),
             orientation: Quaternion::zero(),
-            velocity: cgmath::Vector3::zero(),
+            velocity: self.velocity,
             rotation: cgmath::Vector3::zero(),
             max_acceleration: 1.5,
         }
@@ -99,9 +99,8 @@ impl Kinematic for Cube {
 
         self.position += self.velocity * dt;
 
-        // TODO: check if this works
         let rotation = Quaternion::from_sv(1.0, self.rotation);
-        self.orientation = self.orientation.lerp(rotation, dt);
+        self.orientation = self.orientation.normalize().slerp(rotation, dt);
 
         self.velocity += steering.linear * dt;
         self.rotation += steering.angular * dt;

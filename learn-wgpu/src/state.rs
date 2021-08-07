@@ -503,7 +503,12 @@ impl State {
             let steering_output = match cube.state {
                 CubeState::Fleeing => steering::flee(cube, &self.light),
 
-                _ => steering::stop(cube),
+                _ => {
+                    let stop = steering::stop(cube);
+                    let rotate = steering::rotate_by_position(&self.light);
+
+                    steering::combine(vec![&stop, &rotate])
+                }
             };
 
             cube.update(steering_output, dt);
