@@ -1,5 +1,4 @@
 use cgmath::prelude::*;
-use cgmath::{Quaternion, Vector3};
 use model::{DrawLight, DrawModel, Vertex};
 use rand::{prelude::IteratorRandom, thread_rng};
 use std::collections::HashMap;
@@ -7,9 +6,9 @@ use wgpu::util::DeviceExt;
 use winit::{event::*, window::Window};
 
 use crate::camera;
-use crate::entity::{Cube, CubeState, Light};
+use crate::entity::{Light, Spaceship, SpaceshipState};
 use crate::model;
-use crate::steering::{self, Kinematic};
+use crate::steering::{self, DummyKinematic, Kinematic};
 use crate::texture;
 
 const CLEAR_COLOR: wgpu::Color = wgpu::Color {
@@ -48,16 +47,16 @@ impl Uniforms {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct CubeRaw {
+struct SpaceshipRaw {
     model: [[f32; 4]; 4],
     normal: [[f32; 3]; 3],
 }
 
-impl model::Vertex for CubeRaw {
+impl model::Vertex for SpaceshipRaw {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         use std::mem;
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<CubeRaw>() as wgpu::BufferAddress,
+            array_stride: mem::size_of::<SpaceshipRaw>() as wgpu::BufferAddress,
             // We need to switch from using a step mode of Vertex to Instance
             // This means that our shaders will only change to use the next
             // instance when the shader starts processing a new instance
@@ -105,12 +104,12 @@ impl model::Vertex for CubeRaw {
     }
 }
 
-fn cube_to_raw(cube: &Cube) -> CubeRaw {
-    let model =
-        cgmath::Matrix4::from_translation(cube.position) * cgmath::Matrix4::from(cube.orientation);
-    CubeRaw {
+fn spaceship_to_raw(spaceship: &Spaceship) -> SpaceshipRaw {
+    let model = cgmath::Matrix4::from_translation(spaceship.position)
+        * cgmath::Matrix4::from(spaceship.orientation);
+    SpaceshipRaw {
         model: model.into(),
-        normal: cgmath::Matrix3::from(cube.orientation).into(),
+        normal: cgmath::Matrix3::from(spaceship.orientation).into(),
     }
 }
 
@@ -147,16 +146,18 @@ pub struct State {
     light_bind_group: wgpu::BindGroup,
     light_render_pipeline: wgpu::RenderPipeline,
     // external state
-    obj_model: model::Model,
+    spaceship_model: model::Model,
+    light_model: model::Model,
     depth_texture: texture::Texture,
     camera: camera::Camera,
     projection: camera::Projection,
     camera_controller: camera::CameraController,
     // module state
     uniforms: Uniforms,
-    instances: HashMap<u16, Cube>,
+    instances: HashMap<u16, Spaceship>,
     light: Light,
     mouse_pressed: bool,
+    is_paused: bool,
 }
 
 impl State {
@@ -248,8 +249,8 @@ impl State {
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instance Buffer"),
             usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
-            // fits 256 cube models
-            size: 25600,
+            // TODO: calculate this to get the real value that fits all entities
+            size: 256_000,
             mapped_at_creation: false,
         });
 
@@ -294,7 +295,16 @@ impl State {
         });
 
         let res_dir = std::path::Path::new(env!("OUT_DIR")).join("res");
-        let obj_model = model::Model::load(
+
+        let spaceship_model = model::Model::load(
+            &device,
+            &queue,
+            &texture_bind_group_layout,
+            res_dir.join("spaceship.obj"),
+        )
+        .unwrap();
+
+        let light_model = model::Model::load(
             &device,
             &queue,
             &texture_bind_group_layout,
@@ -302,7 +312,7 @@ impl State {
         )
         .unwrap();
 
-        let light = Light::new(Vector3::new(0.0, 0.0, 0.0), [1.0, 0.8, 0.7]);
+        let light = Light::new(cgmath::Vector3::new(0.0, 0.0, 0.0), [1.0, 0.8, 0.7]);
 
         let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Light VB"),
@@ -359,7 +369,7 @@ impl State {
                 &render_pipeline_layout,
                 sc_desc.format,
                 Some(texture::Texture::DEPTH_FORMAT),
-                &[model::ModelVertex::desc(), CubeRaw::desc()],
+                &[model::ModelVertex::desc(), SpaceshipRaw::desc()],
                 shader,
             )
         };
@@ -400,7 +410,8 @@ impl State {
             light_buffer,
             light_bind_group,
             light_render_pipeline,
-            obj_model,
+            spaceship_model,
+            light_model,
             camera,
             projection,
             camera_controller,
@@ -408,6 +419,7 @@ impl State {
             instances,
             light,
             mouse_pressed: false,
+            is_paused: true,
         }
     }
 
@@ -427,7 +439,20 @@ impl State {
                 virtual_keycode: Some(key),
                 state,
                 ..
-            }) => self.camera_controller.process_keyboard(*key, *state),
+            }) => {
+                let pause_update = match key {
+                    VirtualKeyCode::P if *state == ElementState::Released => {
+                        self.is_paused = !self.is_paused;
+                        true
+                    }
+
+                    _ => false,
+                };
+
+                let camera_update = self.camera_controller.process_keyboard(*key, *state);
+
+                pause_update || camera_update
+            }
             DeviceEvent::MouseWheel { delta, .. } => {
                 self.camera_controller.process_scroll(*&delta);
                 true
@@ -457,18 +482,29 @@ impl State {
         self.uniforms
             .update_view_proj(&self.camera, &self.projection);
 
+        self.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[self.uniforms]),
+        );
+
+        if self.is_paused {
+            return;
+        }
+
         // the light
         match self.light.chase_target_id {
             // chase the current target
             Some(id) => match self.instances.get(&id) {
-                Some(cube) => {
-                    let steering_output = steering::seek(&self.light, cube);
+                Some(spaceship) => {
+                    let steering_output = steering::seek(&self.light, spaceship);
                     self.light.update(steering_output, dt);
 
-                    let distance_to_cube = (self.light.position - cube.position).magnitude();
+                    let distance_to_spaceship =
+                        (self.light.position - spaceship.position).magnitude();
 
-                    if distance_to_cube < CHASE_STOP_DISTANCE {
-                        let prev_id = cube.id;
+                    if distance_to_spaceship < CHASE_STOP_DISTANCE {
+                        let prev_id = spaceship.id;
                         let next_target_id = self
                             .instances
                             .keys()
@@ -488,46 +524,40 @@ impl State {
 
         self.light.update_color();
 
-        // the cubes
-        for cube in self.instances.values_mut() {
-            let distance_to_light = (cube.position - self.light.position).magnitude();
-            let next_state = if distance_to_light < CHASE_STOP_DISTANCE * 3.0 {
-                CubeState::Fleeing
-            } else {
-                CubeState::Idle
-            };
-
-            cube.state = next_state;
-
-            // choose steering behavior based on the cube state
-            let steering_output = match cube.state {
-                CubeState::Fleeing => steering::flee(cube, &self.light),
-
-                _ => {
-                    let stop = steering::stop(cube);
-                    let rotate = steering::rotate_by_position(&self.light);
-
-                    steering::combine(vec![&stop, &rotate])
-                }
-            };
-
-            cube.update(steering_output, dt);
-        }
-
-        // update the raw render data
-        self.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[self.uniforms]),
-        );
-
         self.queue.write_buffer(
             &self.light_buffer,
             0,
             bytemuck::cast_slice(&[light_to_raw(&self.light)]),
         );
 
-        self.update_cube_buffer();
+        // the spaceships
+        println!("-> begin ship update");
+
+        for spaceship in self.instances.values_mut() {
+            println!("ship id # {:?}", spaceship.id);
+            println!("spaceship.orientation {:?}", spaceship.orientation);
+            println!("spaceship.rotation {:?}", spaceship.rotation);
+
+            let distance_to_light = (spaceship.position - self.light.position).magnitude();
+            let next_state = if distance_to_light < CHASE_STOP_DISTANCE * 3.0 {
+                SpaceshipState::Fleeing
+            } else {
+                SpaceshipState::Idle
+            };
+
+            spaceship.state = next_state;
+
+            // choose steering behavior based on the spaceship state
+            let steering_output = steering::face(
+                spaceship,
+                &DummyKinematic::from_position(cgmath::Vector3::new(0.0, 0.0, -10.0)),
+            );
+
+            spaceship.update(steering_output, dt);
+            println!("\n");
+        }
+
+        self.update_spaceship_buffer();
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
@@ -563,14 +593,14 @@ impl State {
 
         render_pass.set_pipeline(&self.light_render_pipeline);
         render_pass.draw_light_model(
-            &self.obj_model,
+            &self.light_model,
             &self.uniform_bind_group,
             &self.light_bind_group,
         );
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.draw_model_instanced(
-            &self.obj_model,
+            &self.spaceship_model,
             0..self.instances.len() as u32,
             &self.uniform_bind_group,
             &self.light_bind_group,
@@ -584,20 +614,24 @@ impl State {
         Ok(())
     }
 
-    pub fn add_cube(
+    pub fn add_spaceship(
         &mut self,
         id: u16,
         position: cgmath::Vector3<f32>,
-        orientation: Quaternion<f32>,
+        orientation: cgmath::Quaternion<f32>,
     ) {
-        let cube = Cube::new(id, position, orientation);
+        let spaceship = Spaceship::new(id, position, orientation);
 
-        self.instances.insert(id, cube);
-        self.update_cube_buffer();
+        self.instances.insert(id, spaceship);
+        self.update_spaceship_buffer();
     }
 
-    fn update_cube_buffer(&mut self) {
-        let instance_data = self.instances.values().map(cube_to_raw).collect::<Vec<_>>();
+    fn update_spaceship_buffer(&mut self) {
+        let instance_data = self
+            .instances
+            .values()
+            .map(spaceship_to_raw)
+            .collect::<Vec<_>>();
 
         self.queue.write_buffer(
             &self.instance_buffer,

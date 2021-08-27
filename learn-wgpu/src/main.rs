@@ -30,64 +30,64 @@ fn main() {
     let mut state = pollster::block_on(State::new(&window));
     let mut last_render_time = std::time::Instant::now();
 
-    state.add_cube(
+    state.add_spaceship(
         1,
-        cgmath::Vector3 {
-            x: 0.0,
-            y: 3.0,
-            z: 0.0,
-        },
-        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
-    );
-
-    state.add_cube(
-        2,
-        cgmath::Vector3 {
-            x: 0.0,
-            y: -4.0,
-            z: 0.0,
-        },
-        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
-    );
-
-    state.add_cube(
-        3,
         cgmath::Vector3 {
             x: 5.0,
             y: 0.0,
             z: 0.0,
         },
-        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_y(), cgmath::Deg(90.0)),
     );
 
-    state.add_cube(
-        4,
+    state.add_spaceship(
+        2,
         cgmath::Vector3 {
-            x: -4.0,
+            x: -5.0,
             y: 0.0,
             z: 0.0,
         },
-        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_y(), cgmath::Deg(-90.0)),
     );
 
-    state.add_cube(
+    state.add_spaceship(
+        3,
+        cgmath::Vector3 {
+            x: 0.0,
+            y: 5.0,
+            z: 0.0,
+        },
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_x(), cgmath::Deg(-90.0)),
+    );
+
+    state.add_spaceship(
+        4,
+        cgmath::Vector3 {
+            x: 0.0,
+            y: -5.0,
+            z: 0.0,
+        },
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_x(), cgmath::Deg(90.0)),
+    );
+
+    state.add_spaceship(
         5,
         cgmath::Vector3 {
             x: 0.0,
             y: 0.0,
-            z: 3.0,
+            z: 5.0,
         },
-        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
+        cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
     );
 
-    state.add_cube(
+    state.add_spaceship(
         6,
         cgmath::Vector3 {
             x: 0.0,
             y: 0.0,
             z: -5.0,
         },
-        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0)),
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_y(), cgmath::Deg(180.0)),
     );
 
     event_loop.run(move |event, _, control_flow| {
