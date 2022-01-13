@@ -548,9 +548,11 @@ impl State {
             spaceship.state = next_state;
 
             // choose steering behavior based on the spaceship state
-            let steering_output = steering::face(
+            let steering_output = steering::align(
                 spaceship,
-                &DummyKinematic::from_position(cgmath::Vector3::new(0.0, 0.0, -10.0)),
+                &DummyKinematic::from_orientation(cgmath::Quaternion::from_angle_y(cgmath::Rad(
+                    180.0,
+                ))),
             );
 
             spaceship.update(steering_output, dt);

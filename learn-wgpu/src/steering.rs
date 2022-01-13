@@ -266,40 +266,6 @@ fn face_direction(direction: Vector3<f32>) -> Quaternion<f32> {
     }
 }
 
-pub fn wander(character_source: &impl Kinematic) -> SteeringOutput {
-    let wander_offset = Vector3::new(5.0, 0.0, 0.0);
-    let wander_radius_xz = 2.0;
-    let wander_radius_y = 2.0;
-    // "should be strictly less than 1/sqrt(3) = 0.577 [...to avoid a zero length wander target]"
-    let wander_rate = 0.5;
-    let character = character_source.props();
-
-    let wander_direction: Vector3<f32> = Vector3::new(
-        random_binomial() * wander_rate,
-        random_binomial() * wander_rate,
-        random_binomial() * wander_rate,
-    );
-
-    wander_direction.normalize();
-
-    // Calculate the transformed target direction and scale it
-    let mut target = character.orientation * wander_direction;
-
-    target.x *= wander_radius_xz;
-    target.y *= wander_radius_y;
-    target.z *= wander_radius_xz;
-    // Offset the center of the wander circle
-    // TODO: double check this
-    target += character.position + (character.orientation * wander_offset);
-
-    let face_output = face(character_source, &DummyKinematic::from_position(target));
-
-    SteeringOutput {
-        linear: Some(target.normalize() * 0.5),
-        angular: face_output.angular,
-    }
-}
-
 // Utility
 
 fn random_binomial() -> f32 {

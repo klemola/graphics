@@ -98,7 +98,7 @@ fn main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     let object_color: vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords);
     let object_normal: vec4<f32> = textureSample(t_normal, s_normal, in.tex_coords);
 
-    let ambient_strength = 0.05;
+    let ambient_strength = 0.2;
     let ambient_color = light.color * ambient_strength;
 
     // how much diffuse light does the object reflect, like a "matte -> metal spectrum"
